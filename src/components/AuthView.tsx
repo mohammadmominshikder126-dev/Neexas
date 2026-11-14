@@ -24,8 +24,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [referralCode, setReferralCode] = useState(initialReferralCode);
   const [showPass, setShowPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -39,10 +41,33 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      setError('সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)।');
+      return;
+    }
+
+    if (mode === 'register') {
+      if (password.length < 6) {
+        setError('পাসওয়ার্ড কমপক্ষে 6 অক্ষরের হতে হবে।');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('পাসওয়ার্ড এবং কনফার্ম পাসওয়ার্ড মেলেনি। উভয় ঘরে একই পাসওয়ার্ড দিন।');
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (mode === 'register') {
-        const res = await api.register({ phone, password, referralCode });
+        const res = await api.register({
+          phone,
+          password,
+          confirmPassword,
+          referralCode,
+        });
         onAuthenticated(res.token, res.user, true);
       } else {
         const res = await api.login({ phone, password });
@@ -112,7 +137,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               {/* Phone Input */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  মোবাইল নম্বর
+                  মোবাইল নম্বর (Phone Number)
                 </label>
                 <div className="flex items-center rounded-xl border border-slate-300 bg-slate-50 focus-within:border-slate-900 focus-within:bg-white transition-colors overflow-hidden">
                   <div className="flex items-center gap-1.5 px-3.5 py-3.5 bg-slate-100 border-r border-slate-200 text-slate-700 text-sm font-num font-semibold shrink-0">
@@ -134,7 +159,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               {/* Password Input */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  পাসওয়ার্ড
+                  {mode === 'register' ? 'নতুন পাসওয়ার্ড তৈরি করুন (Create Password)' : 'পাসওয়ার্ড (Password)'}
                 </label>
                 <div className="flex items-center rounded-xl border border-slate-300 bg-slate-50 focus-within:border-slate-900 focus-within:bg-white transition-colors px-3.5">
                   <Lock className="w-4 h-4 text-slate-400 shrink-0" />
@@ -158,11 +183,40 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </div>
               </div>
 
+              {/* Confirm Password Input (Register mode) */}
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    পাসওয়ার্ড নিশ্চিত করুন (Confirm Password)
+                  </label>
+                  <div className="flex items-center rounded-xl border border-slate-300 bg-slate-50 focus-within:border-slate-900 focus-within:bg-white transition-colors px-3.5">
+                    <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      type={showConfirmPass ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="আবার একই পাসওয়ার্ড লিখুন"
+                      className="w-full px-3 py-3.5 bg-transparent text-slate-900 text-sm font-num placeholder:text-slate-400 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPass(!showConfirmPass)}
+                      aria-label="কনফার্ম পাসওয়ার্ড দেখুন"
+                      className="p-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Referral Code Input (Register mode) */}
               {mode === 'register' && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    রেফারেল কোড (ঐচ্ছিক)
+                    রেফার কোড (ঐচ্ছিক)
                   </label>
                   <div className="flex items-center rounded-xl border border-slate-300 bg-slate-50 focus-within:border-slate-900 focus-within:bg-white transition-colors px-3.5">
                     <UserPlus className="w-4 h-4 text-slate-400 shrink-0" />
@@ -170,7 +224,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       type="text"
                       value={referralCode}
                       onChange={(e) => setReferralCode(e.target.value)}
-                      placeholder="আমন্ত্রণ কোড থাকলে লিখুন"
+                      placeholder="আমন্ত্রণ কোড বা রেফার লিংক দিন"
                       className="w-full px-3 py-3.5 bg-transparent text-slate-900 text-sm font-mono-num placeholder:text-slate-400 focus:outline-none"
                     />
                   </div>

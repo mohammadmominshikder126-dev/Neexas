@@ -21,8 +21,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   minWithdraw: 200,
   welcomeBonus: 100,
   level1Rate: 20,
-  level2Rate: 2,
-  level3Rate: 1,
+  level2Rate: 3,
+  level3Rate: 2,
 };
 
 export const DEFAULT_PLANS: Plan[] = [
@@ -161,8 +161,8 @@ export const DEFAULT_BANNERS: BannerSlide[] = [
     id: 'banner_6',
     order: 6,
     badge: '৩-লেভেল রেফারেল',
-    title: 'বন্ধুদের আমন্ত্রণ জানিয়ে 23% পর্যন্ত কমিশন',
-    subtitle: 'লেভেল 1 থেকে 20%, লেভেল 2 থেকে 2% এবং লেভেল 3 থেকে 1% সরাসরি বোনাস অর্জন করুন।',
+    title: 'বন্ধুদের আমন্ত্রণ জানিয়ে 25% পর্যন্ত কমিশন',
+    subtitle: 'লেভেল 1 থেকে 20%, লেভেল 2 থেকে 3% এবং লেভেল 3 থেকে 2% সরাসরি বোনাস অর্জন করুন।',
     imageUrl: BANNER_IMAGES.wireframeNexasWorld,
     accent: 'from-blue-950/90 via-slate-950/75 to-slate-900/60',
     active: false,

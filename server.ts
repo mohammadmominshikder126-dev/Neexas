@@ -103,6 +103,10 @@ function loadDb(): DatabaseSchema {
       if (users.length === 0 && settings.welcomeBonus === 40) {
         settings.welcomeBonus = 100;
       }
+      if (settings.level2Rate === 2 && settings.level3Rate === 1) {
+        settings.level2Rate = 3;
+        settings.level3Rate = 2;
+      }
       const giftCodes =
         users.length === 0
           ? def.giftCodes
@@ -183,6 +187,25 @@ function normalizePhone(input: string): string {
     return `+880${digits.slice(0, 10)}`;
   }
   return '';
+}
+
+function extractReferralCode(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('ref=')) {
+    try {
+      const normalized = trimmed.startsWith('http')
+        ? trimmed
+        : `https://nexas.local/?${trimmed.split('?')[1] || trimmed}`;
+      const u = new URL(normalized);
+      const refParam = u.searchParams.get('ref');
+      if (refParam) return refParam.trim();
+    } catch {
+      const m = trimmed.match(/[?&]ref=([^&#\s]+)/i);
+      if (m && m[1]) return m[1].trim();
+    }
+  }
+  return trimmed;
 }
 
 function maskPhone(phone: string): string {
@@ -315,9 +338,9 @@ function computeTeamSummary(user: StoredUser) {
   const level2Ids = new Set(level2Users.map((u) => u.id));
   const level3Users = db.users.filter((u) => u.referredBy && level2Ids.has(u.referredBy));
 
-  const valid1 = level1Users.filter((u) => u.hasPurchasedPlan).length;
-  const valid2 = level2Users.filter((u) => u.hasPurchasedPlan).length;
-  const valid3 = level3Users.filter((u) => u.hasPurchasedPlan).length;
+  const valid1 = level1Users.filter((u) => u.hasRecharged || u.hasPurchasedPlan).length;
+  const valid2 = level2Users.filter((u) => u.hasRecharged || u.hasPurchasedPlan).length;
+  const valid3 = level3Users.filter((u) => u.hasRecharged || u.hasPurchasedPlan).length;
 
   const refTxs = db.transactions.filter((t) => t.userId === user.id && t.type === 'referral');
   const earn1 = refTxs.filter((t) => t.title.includes('লেভেল 1')).reduce((s, t) => s + t.amount, 0);
@@ -429,75 +452,91 @@ async function startServer() {
 
   // Auth: Register
   app.post('/api/auth/register', (req, res) => {
-    const { phone, password, referralCode } = req.body as {
-      phone?: string;
-      password?: string;
-      referralCode?: string;
-    };
-    const normalizedPhone = normalizePhone(phone || '');
-    if (!normalizedPhone || normalizedPhone.length !== 14) {
-      res.status(400).json({ error: 'সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)।' });
-      return;
+    try {
+      const { phone, password, confirmPassword, referralCode } = (req.body || {}) as {
+        phone?: string;
+        password?: string;
+        confirmPassword?: string;
+        referralCode?: string;
+      };
+      const normalizedPhone = normalizePhone(phone || '');
+      if (!normalizedPhone || normalizedPhone.length !== 14) {
+        res.status(400).json({ error: 'সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)।' });
+        return;
+      }
+      if (!password || password.length < 6) {
+        res.status(400).json({ error: 'পাসওয়ার্ড কমপক্ষে 6 অক্ষরের হতে হবে।' });
+        return;
+      }
+      if (confirmPassword !== undefined && password !== confirmPassword) {
+        res.status(400).json({ error: 'পাসওয়ার্ড এবং কনফার্ম পাসওয়ার্ড মেলেনি।' });
+        return;
+      }
+      if (db.users.some((u) => u.phone === normalizedPhone)) {
+        res.status(400).json({ error: 'এই মোবাইল নম্বর দিয়ে ইতিমধ্যেই অ্যাকাউন্ট খোলা হয়েছে।' });
+        return;
+      }
+
+      const cleanRef = extractReferralCode(referralCode || '');
+      const inviter = cleanRef
+        ? db.users.find((u) => u.referralCode.trim().toLowerCase() === cleanRef.toLowerCase())
+        : undefined;
+
+      const welcomeBonus = Number(db.settings.welcomeBonus ?? 100);
+      const newUser: StoredUser = {
+        id: generateId('usr'),
+        phone: normalizedPhone,
+        passwordHash: hashPassword(password),
+        referralCode: generateReferralCode(),
+        referredBy: inviter ? inviter.id : null,
+        rechargeBalance: welcomeBonus,
+        withdrawalBalance: 0,
+        hasRecharged: false,
+        hasPurchasedPlan: false,
+        bankCard: null,
+        claimedSalaryLevels: [],
+        redeemedGiftCodes: [],
+        createdAt: new Date().toISOString(),
+      };
+
+      db.users.push(newUser);
+      addTransaction(newUser.id, 'bonus', 'নিবন্ধন স্বাগতম বোনাস', welcomeBonus, 'recharge');
+
+      const token = crypto.randomBytes(24).toString('hex');
+      db.sessions[token] = newUser.id;
+      saveDb();
+      broadcastSync('user_registered', { userId: newUser.id });
+
+      res.json({ token, user: sanitizeUser(newUser) });
+    } catch (err) {
+      console.error('Register error:', err);
+      res.status(500).json({ error: 'নিবন্ধন সম্পন্ন করতে সমস্যা হয়েছে, আবার চেষ্টা করুন।' });
     }
-    if (!password || password.length < 6) {
-      res.status(400).json({ error: 'পাসওয়ার্ড কমপক্ষে 6 অক্ষরের হতে হবে।' });
-      return;
-    }
-    if (db.users.some((u) => u.phone === normalizedPhone)) {
-      res.status(400).json({ error: 'এই মোবাইল নম্বর দিয়ে ইতিমধ্যেই অ্যাকাউন্ট খোলা হয়েছে।' });
-      return;
-    }
-
-    const cleanRef = String(referralCode || '').trim();
-    const inviter = cleanRef
-      ? db.users.find((u) => u.referralCode.toLowerCase() === cleanRef.toLowerCase())
-      : undefined;
-
-    const welcomeBonus = Number(db.settings.welcomeBonus ?? 100);
-    const newUser: StoredUser = {
-      id: generateId('usr'),
-      phone: normalizedPhone,
-      passwordHash: hashPassword(password),
-      referralCode: generateReferralCode(),
-      referredBy: inviter ? inviter.id : null,
-      rechargeBalance: welcomeBonus,
-      withdrawalBalance: 0,
-      hasRecharged: false,
-      hasPurchasedPlan: false,
-      bankCard: null,
-      claimedSalaryLevels: [],
-      redeemedGiftCodes: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    db.users.push(newUser);
-    addTransaction(newUser.id, 'bonus', 'নিবন্ধন স্বাগতম বোনাস', welcomeBonus, 'recharge');
-
-    const token = crypto.randomBytes(24).toString('hex');
-    db.sessions[token] = newUser.id;
-    saveDb();
-
-    res.json({ token, user: sanitizeUser(newUser) });
   });
 
   // Auth: Login
   app.post('/api/auth/login', (req, res) => {
-    processDuePlanPayouts();
-    const { phone, password } = req.body as { phone?: string; password?: string };
-    const normalizedPhone = normalizePhone(phone || '');
-    if (!normalizedPhone) {
-      res.status(400).json({ error: 'সঠিক মোবাইল নম্বর দিন।' });
-      return;
+    try {
+      processDuePlanPayouts();
+      const { phone, password } = (req.body || {}) as { phone?: string; password?: string };
+      const normalizedPhone = normalizePhone(phone || '');
+      if (!normalizedPhone) {
+        res.status(400).json({ error: 'সঠিক মোবাইল নম্বর দিন।' });
+        return;
+      }
+      const user = db.users.find((u) => u.phone === normalizedPhone);
+      if (!user || user.passwordHash !== hashPassword(password || '')) {
+        res.status(401).json({ error: 'মোবাইল নম্বর অথবা পাসওয়ার্ড সঠিক নয়।' });
+        return;
+      }
+      const token = crypto.randomBytes(24).toString('hex');
+      db.sessions[token] = user.id;
+      saveDb();
+      res.json({ token, user: sanitizeUser(user) });
+    } catch (err) {
+      console.error('Login error:', err);
+      res.status(500).json({ error: 'লগইন সম্পন্ন করতে সমস্যা হয়েছে, আবার চেষ্টা করুন।' });
     }
-    const user = db.users.find((u) => u.phone === normalizedPhone);
-    if (!user || user.passwordHash !== hashPassword(password || '')) {
-      res.status(401).json({ error: 'মোবাইল নম্বর অথবা পাসওয়ার্ড সঠিক নয়।' });
-      return;
-    }
-    const token = crypto.randomBytes(24).toString('hex');
-    db.sessions[token] = user.id;
-    saveDb();
-    res.json({ token, user: sanitizeUser(user) });
   });
 
   // Auth: Current user & dashboard state
@@ -564,33 +603,6 @@ async function startServer() {
     const isFirstPlan = !user.hasPurchasedPlan;
     user.hasPurchasedPlan = true;
     addTransaction(user.id, 'plan_buy', `${plan.name} প্যাকেজ ক্রয়`, -plan.price, 'recharge');
-
-    // Distribute 3-level referral commission
-    const rates = [
-      { level: 1, rate: db.settings.level1Rate },
-      { level: 2, rate: db.settings.level2Rate },
-      { level: 3, rate: db.settings.level3Rate },
-    ];
-    let currentRefId = user.referredBy;
-    for (const r of rates) {
-      if (!currentRefId) break;
-      const upline = db.users.find((u) => u.id === currentRefId);
-      if (!upline) break;
-      if (r.rate > 0) {
-        const comm = Number(((plan.price * r.rate) / 100).toFixed(2));
-        if (comm > 0) {
-          upline.withdrawalBalance = Number((upline.withdrawalBalance + comm).toFixed(2));
-          addTransaction(
-            upline.id,
-            'referral',
-            `লেভেল ${r.level} রেফার কমিশন (${r.rate}%)`,
-            comm,
-            'withdrawal'
-          );
-        }
-      }
-      currentRefId = upline.referredBy;
-    }
 
     if (isFirstPlan) {
       pushLiveFeed({
@@ -1049,6 +1061,34 @@ async function startServer() {
         dep.amount,
         'recharge'
       );
+
+      // Distribute 3-level referral commission when recharge completes (L1: 20%, L2: 3%, L3: 2%)
+      const rates = [
+        { level: 1, rate: db.settings.level1Rate },
+        { level: 2, rate: db.settings.level2Rate },
+        { level: 3, rate: db.settings.level3Rate },
+      ];
+      let currentRefId = user.referredBy;
+      for (const r of rates) {
+        if (!currentRefId) break;
+        const upline = db.users.find((u) => u.id === currentRefId);
+        if (!upline) break;
+        if (r.rate > 0) {
+          const comm = Number(((dep.amount * r.rate) / 100).toFixed(2));
+          if (comm > 0) {
+            upline.withdrawalBalance = Number((upline.withdrawalBalance + comm).toFixed(2));
+            addTransaction(
+              upline.id,
+              'referral',
+              `লেভেল ${r.level} রেফার কমিশন (${r.rate}%) — ${maskPhone(user.phone)} রিচার্জ ৳${dep.amount}`,
+              comm,
+              'withdrawal'
+            );
+          }
+        }
+        currentRefId = upline.referredBy;
+      }
+
       pushLiveFeed({
         type: 'deposit',
         phone: maskPhone(user.phone),

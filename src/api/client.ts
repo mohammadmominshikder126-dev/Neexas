@@ -13,6 +13,8 @@ import {
   WithdrawRecord,
 } from '../types';
 
+import { handleFallbackRequest } from './fallbackEngine';
+
 const USER_TOKEN_KEY = 'nexas_user_token';
 const ADMIN_TOKEN_KEY = 'nexas_admin_token';
 
@@ -43,10 +45,25 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   if (token && !headers.Authorization) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(url, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
+
+  let res: Response | null = null;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch {
+    return handleFallbackRequest<T>(url, options, headers);
+  }
+
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    return handleFallbackRequest<T>(url, options, headers);
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') {
+    return handleFallbackRequest<T>(url, options, headers);
+  }
   if (!res.ok) {
-    throw new Error(data.error || 'অনুরোধ সম্পন্ন করা যায়নি।');
+    throw new Error((data as { error?: string }).error || 'অনুরোধ সম্পন্ন করা যায়নি।');
   }
   return data as T;
 }
@@ -65,7 +82,12 @@ async function adminRequest<T>(url: string, options: RequestInit = {}): Promise<
 export const api = {
   getBootstrap: () => request<BootstrapData>('/api/bootstrap'),
 
-  register: (payload: { phone: string; password: string; referralCode?: string }) =>
+  register: (payload: {
+    phone: string;
+    password: string;
+    confirmPassword?: string;
+    referralCode?: string;
+  }) =>
     request<{ token: string; user: User }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -45,8 +45,8 @@ type OverlayRoute =
 
 const EMPTY_TEAM: TeamSummary = {
   level1: { count: 0, earnings: 0, rate: 20 },
-  level2: { count: 0, earnings: 0, rate: 2 },
-  level3: { count: 0, earnings: 0, rate: 1 },
+  level2: { count: 0, earnings: 0, rate: 3 },
+  level3: { count: 0, earnings: 0, rate: 2 },
   totalValidUsers: 0,
   totalEarnings: 0,
 };
@@ -57,6 +57,19 @@ function isAdminRoute(): boolean {
     window.location.pathname.startsWith('/admin') ||
     window.location.hash.startsWith('#/admin')
   );
+}
+
+function getRefFromLocation(): string {
+  if (typeof window === 'undefined') return '';
+  const searchRef = new URLSearchParams(window.location.search).get('ref');
+  if (searchRef) return searchRef.trim();
+  const hash = window.location.hash || '';
+  const idx = hash.indexOf('?');
+  if (idx !== -1) {
+    const hashRef = new URLSearchParams(hash.slice(idx)).get('ref');
+    if (hashRef) return hashRef.trim();
+  }
+  return '';
 }
 
 export default function App() {
@@ -84,9 +97,7 @@ export default function App() {
   const [bootLoading, setBootLoading] = useState(true);
 
   // Referral query param -> direct registration mode
-  const urlParams =
-    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const refFromUrl = urlParams?.get('ref') || '';
+  const refFromUrl = getRefFromLocation();
 
   const firestoreSettingsTimeRef = useRef<number>(0);
   const firestorePlansActiveRef = useRef<boolean>(false);
