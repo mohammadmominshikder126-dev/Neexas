@@ -76,13 +76,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
       {/* 10-Slide Promotional Image Banner Carousel */}
       {currentBanner && (
         <section aria-label="প্রচারমূলক ব্যানার" className="relative rounded-2xl overflow-hidden border border-slate-800 shadow-xl bg-[#121722]">
-          <div className="relative h-52 sm:h-64 w-full">
+          <div className="relative aspect-[2/1] max-h-[360px] w-full bg-[#141c29]">
             <img
               key={currentBanner.id}
               src={currentBanner.imageUrl}
               alt={currentBanner.title || `ব্যানার ${activeSlide + 1}`}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover transition-opacity duration-500"
+              className="w-full h-full object-contain transition-opacity duration-500"
             />
 
             {/* Prev / Next Controls */}

@@ -109,11 +109,15 @@ function loadDb(): DatabaseSchema {
           : Array.isArray(parsed.giftCodes) && parsed.giftCodes.length > 0
           ? parsed.giftCodes
           : def.giftCodes;
+      const savedBanners = Array.isArray(parsed.banners) && parsed.banners.length > 0 ? parsed.banners : def.banners;
+      const isOldDefaultBanners =
+        savedBanners[0]?.id === 'banner_1' &&
+        savedBanners[0]?.imageUrl === '/assets/aistudio/nexas-6000-White-Slush_01ab39be.jpg';
       return {
         adminPasscode: parsed.adminPasscode || def.adminPasscode,
         settings,
         plans: Array.isArray(parsed.plans) && parsed.plans.length > 0 ? parsed.plans : def.plans,
-        banners: Array.isArray(parsed.banners) && parsed.banners.length > 0 ? parsed.banners : def.banners,
+        banners: isOldDefaultBanners ? def.banners : savedBanners,
         users,
         sessions: parsed.sessions || {},
         adminTokens: parsed.adminTokens || {},
@@ -408,14 +412,14 @@ async function startServer() {
     const images: { name: string; url: string; source: 'server' | 'uploaded' }[] = [];
     if (fs.existsSync(AISTUDIO_ASSETS_DIR)) {
       for (const f of fs.readdirSync(AISTUDIO_ASSETS_DIR)) {
-        if (/\.(png|jpe?g|webp|gif)$/i.test(f)) {
+        if (/\.(png|jpe?g|webp|gif|svg)$/i.test(f)) {
           images.push({ name: f, url: `/assets/aistudio/${f}`, source: 'server' });
         }
       }
     }
     if (fs.existsSync(UPLOAD_DIR)) {
       for (const f of fs.readdirSync(UPLOAD_DIR)) {
-        if (/\.(png|jpe?g|webp|gif)$/i.test(f)) {
+        if (/\.(png|jpe?g|webp|gif|svg)$/i.test(f)) {
           images.push({ name: f, url: `/uploads/${f}`, source: 'uploaded' });
         }
       }
